@@ -1,8 +1,60 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// ==========================================
+// API GET: LẤY DANH SÁCH ĐƠN ĐẶT CỦA NGƯỜI DÙNG
+// ==========================================
+export async function GET() {
+    try {
+        const session = await getServerSession();
+
+        if (!session || !session.user?.email) {
+            return NextResponse.json(
+                { message: 'Chưa đăng nhập' },
+                { status: 401 }
+            );
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { email: session.user.email }
+        });
+
+        if (!user) {
+            return NextResponse.json(
+                { message: 'Người dùng không tồn tại' },
+                { status: 404 }
+            );
+        }
+
+        const bookings = await prisma.booking.findMany({
+            where: { userId: user.id },
+            include: {
+                tour: {
+                    select: { id: true, title: true, slug: true, image: true }
+                },
+                tourSchedule: {
+                    select: { startDate: true, endDate: true }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        return NextResponse.json(bookings, { status: 200 });
+    } catch (error) {
+        console.error('Lỗi GET bookings:', error);
+        return NextResponse.json(
+            { message: 'Lỗi hệ thống' },
+            { status: 500 }
+        );
+    }
+}
+
+// ==========================================
+// API POST: TẠO ĐƠN ĐẶT TOUR MỚI
+// ==========================================
 export async function POST(req: Request) {
     try {
         const body = await req.json();
