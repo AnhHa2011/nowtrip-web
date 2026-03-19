@@ -1,0 +1,212 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String           @id @default(uuid())
+  phone            String?          @unique 
+  email            String?          @unique
+  password         String           
+  role             String           @default("MEMBER") 
+  isActive         Boolean          @default(true) // Cờ xóa mềm tài khoản
+  
+  customerProfile  CustomerProfile?
+  staffProfile     StaffProfile?
+  bookings         Booking[]      
+  reviews          Review[]       
+  notifications    Notification[] 
+  actionLogs       ActionHistory[]  // Liên kết: Lịch sử các thao tác do User này thực hiện
+  
+  isEmailVerified   Boolean   @default(false) 
+  verificationToken String?   
+  otpExpiresAt      DateTime? 
+
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+model CustomerProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName       String
+  address        String?
+  emergencyPhone String?  
+  loyaltyPoints  Int      @default(0)        
+  membershipTier String   @default("BRONZE") 
+  isActive       Boolean  @default(true) // Cờ ẩn hồ sơ khách hàng
+}
+
+model StaffProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName       String
+  citizenId      String?  
+  bankAccount    String?  
+  hireDate       DateTime @default(now())
+  baseSalary     Int?     
+  kpiScore       Float?   
+  isActive       Boolean  @default(true) // Cờ ẩn hồ sơ nhân viên
+}
+
+model Tour {
+  id          String    @id @default(uuid())
+  slug        String    @unique 
+  title       String    
+  image       String?   // Ảnh đại diện của tour
+  description String?   @db.Text
+  distance    String    
+  difficulty  String    
+  duration    String    
+  price       String    
+  
+  itinerary   Json      
+  included    Json      
+  excluded    Json      
+  checklist   Json      
+  
+  badge       String? 
+
+  isActive    Boolean   @default(true) // Cờ tạm ngưng hoạt động tour
+  
+  schedules   TourSchedule[]
+  bookings    Booking[]
+  reviews     Review[]
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model TourSchedule {
+  id          String   @id @default(uuid())
+  tourId      String
+  tour        Tour     @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  
+  startDate   DateTime // Ngày bắt đầu tour
+  endDate     DateTime // Ngày kết thúc tour
+  totalSlots  Int      @default(20) // Tổng số chỗ tối đa (VD: 20 người)
+  bookedSlots Int      @default(0)  // Số chỗ đã có người đặt cọc/thanh toán
+  
+  price       String?  // (Tùy chọn) Giá riêng cho ngày Lễ/Tết
+  isActive    Boolean  @default(true) // Cờ đóng/mở bán lịch này
+
+  bookings    Booking[] // Danh sách các đơn đặt vé vào ngày này
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum BookingStatus {
+  TU_VAN
+  DA_TU_VAN
+  CHO_XAC_NHAN_CK
+  DA_COC
+  DA_THANH_TOAN
+  HOAN_THANH
+  YEU_CAU_HUY
+  
+  // 👇 THÊM TRẠNG THÁI NÀY VÀO 👇
+  CHO_HOAN_TIEN   // Sale báo Kế toán chuẩn bị hoàn tiền theo chính sách
+  
+  DA_HUY
+  DA_HOAN_TIEN    // Kế toán đã chuyển khoản và upload hình ảnh chứng từ
+  BAO_LUU
+}
+
+model Booking {
+  id            String   @id @default(uuid())
+  tourId        String
+  tour          Tour     @relation(fields: [tourId], references: [id])
+  tourScheduleId String?
+  tourSchedule  TourSchedule? @relation(fields: [tourScheduleId], references: [id])
+  customerName  String
+  customerPhone String   
+  customerEmail String?
+  pax           Int      
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+  status        BookingStatus @default(TU_VAN) 
+  paymentProof  String?  
+  handledById   String?  
+  isActive      Boolean  @default(true) // Cờ ẩn/hủy đơn hàng
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  tourId    String
+  tour      Tour     @relation(fields: [tourId], references: [id])
+  userId    String   
+  user      User     @relation(fields: [userId], references: [id])
+  rating    Int      @default(5) 
+  comment   String   @db.Text
+  isActive  Boolean  @default(true) // Cờ ẩn đánh giá vi phạm
+  createdAt DateTime @default(now())
+}
+
+model Post {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  title       String   
+  category    String   
+  content     String   @db.LongText
+  thumbnail   String?
+  views       Int      @default(0) 
+  isActive    Boolean  @default(true) // Cờ ẩn bài viết
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   
+  user      User     @relation(fields: [userId], references: [id])
+  message   String   
+  isRead    Boolean  @default(false)
+  isActive  Boolean  @default(true) // Cờ ẩn thông báo
+  createdAt DateTime @default(now())
+}
+
+// LỊCH SỬ THAO TÁC HỆ THỐNG (AUDIT LOG)
+model ActionHistory {
+  id          String   @id @default(uuid())
+  userId      String   // ID của nhân viên/admin thực hiện thao tác
+  action      String   // Loại thao tác (VD: CREATE, UPDATE_STATUS, SOFT_DELETE)
+  entityType  String   // Bảng bị tác động (VD: BOOKING, TOUR, USER)
+  entityId    String   // ID của dữ liệu bị tác động
+  oldValues   Json?    // Dữ liệu cũ trước khi sửa (Để đối chiếu)
+  newValues   Json?    // Dữ liệu mới sau khi sửa
+  description String?  // Mô tả nhanh (VD: "Admin đổi trạng thái đơn sang Đã Cọc")
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+// Dùng để quản lý các thông tin liên hệ, footer, logo...
+model SystemSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique // Mã cấu hình (VD: HOTLINE, ADDRESS)
+  value       String   @db.Text // Giá trị cấu hình
+  description String?  // Ghi chú cho Admin hiểu (VD: "Số điện thoại CSKH")
+  updatedAt   DateTime @updatedAt
+}
+
+// Dùng để quản lý các cột mốc
+model Milestone {
+  id          String   @id @default(uuid())
+  period      String   // Thay vì year, dùng period để chứa "2017", "23/04/2020", "Nay"
+  title       String   
+  description String   @db.Text 
+  order       Int      @default(0) 
+  isActive    Boolean  @default(true) 
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
